@@ -1,0 +1,12 @@
+torch
+torchvision
+transformers
+accelerate
+pillow
+peft
+qwen-vl-utils
+fastapi
+uvicorn
+python-multipart
+numpy
+opencv-python-headless
