@@ -2,12 +2,13 @@
 main.py — CLI pour le traitement OCR CIN Tunisienne
 """
 import sys
+import json
 import logging
 from pathlib import Path
 from typing import Optional
 
 from config import app_config, image_config, model_config
-from process_document import process_document, save_json
+from process_document import process_document
 
 logging.basicConfig(
     level=getattr(logging, app_config.log_level),
@@ -43,7 +44,18 @@ def main():
 
     try:
         result = process_document(image_path)
-        save_json(output_path, result)
+
+        output_data = {
+            "success": result.get("success", False),
+            "image": result.get("image", image_path),
+            "extracted_data": result.get("extracted_data", {}),
+            "confidence_score": result.get("structured_data", {}).get("confidence_score", 0),
+            "warnings": result.get("structured_data", {}).get("warnings", []),
+            "validation_errors": result.get("structured_data", {}).get("validation_errors", [])
+        }
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
 
         logger.info(f"Résultat sauvegardé: {output_path}")
 

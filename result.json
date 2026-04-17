@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "image": "test.jpg",
+  "extracted_data": {
+    "id_number": "14426787",
+    "last_name": "بن كرم",
+    "first_name": "بنت عبد الرؤوف",
+    "date_of_birth": "20 أبريل 2002",
+    "place_of_birth": "زغوان"
+  },
+  "confidence_score": 1.0,
+  "warnings": [
+    "CIN 8 chiffres - vérification recommandée"
+  ],
+  "validation_errors": []
+}

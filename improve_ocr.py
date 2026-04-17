@@ -8,29 +8,30 @@ from difflib import SequenceMatcher
 
 
 WILAYAS_NORMALIZE = {
-    "tunis": "تونس", "tounes": "تونس", "tounes": "تونس",
-    "ariana": "أريانة", "arianna": "أريانة", "ariana": "أريانة",
+    # Anglais → Arabe
+    "tunis": "تونس", "tounes": "تونس",
+    "ariana": "أريانة", "arianna": "أريانة",
     "ben arous": "بن عروس", "benarous": "بن عروس",
-    "manouba": "منوبة", "manouba": "منوبة",
+    "manouba": "منوبة",
     "nabeul": "نابل", "nabel": "نابل",
     "zaghouan": "زغوان", "zaghwan": "زغوان",
     "bizerte": "بنزرت", "bizert": "بنزرت",
-    "beja": "باجة", "beja": "باجة", "baja": "باجة", "bejah": "باجة",
-    "jendouba": "جندوبة", "jendouba": "جندوبة",
+    "beja": "باجة", "baja": "باجة", "bejah": "باجة",
+    "jendouba": "جندوبة",
     "le kef": "الكاف", "kef": "الكاف", "el kef": "الكاف",
     "siliana": "سليانة",
     "kairouan": "القيروان", "kairawan": "القيروان",
-    "kasserine": "القصرين", "kasserine": "القصرين",
+    "kasserine": "القصرين",
     "sidi bouzid": "سيدي بوزيد", "sidibou zid": "سيدي بوزيد",
-    "sousse": "سوسة", "sousse": "سوسة", "susa": "سوسة",
-    "monastir": "المنستير", "monastir": "المنستير",
-    "mahdia": "المهدية", "mahdia": "المهدية",
-    "sfax": "صفاقس", "sfax": "صفاقس", "sfaix": "صفاقس",
-    "gafsa": "قفصة", "gafsa": "قفصة",
-    "tozeur": "توزر", "tozeur": "توزر",
-    "kebili": "قبلي", "kebili": "قبلي",
+    "sousse": "سوسة", "susa": "سوسة",
+    "monastir": "المنستير",
+    "mahdia": "المهدية",
+    "sfax": "صفاقس", "sfaix": "صفاقس",
+    "gafsa": "قفصة",
+    "tozeur": "توزر",
+    "kebili": "قبلي",
     "gabes": "قابس", "gabès": "قابس",
-    "medenine": "مدنين", "medenine": "مدنين",
+    "medenine": "مدنين",
     "tataouine": "تطاوين", "tatawin": "تطاوين",
 }
 
@@ -41,6 +42,12 @@ WILAYAS_ARABIC = {
     "قفصة", "توزر", "قبلي", "قابس", "مدنين", "تطاوين"
 }
 
+# Erreurs OCR courantes sur les chiffres
+CIN_DIGIT_CORRECTIONS = {
+    "O": "0", "o": "0", "I": "1", "l": "1",
+    "Z": "2", "S": "5", "B": "8", "G": "6",
+}
+
 
 def normalize_arabic(text: str) -> str:
     """Normalise les caractères arabes."""
@@ -48,6 +55,7 @@ def normalize_arabic(text: str) -> str:
         "أ": "ا", "إ": "ا", "آ": "ا",
         "ى": "ي",
         "ة": "ه",
+        "ؤ": "و", "ئ": "ي",
     }
     result = text
     for old, new in replacements.items():
@@ -60,156 +68,159 @@ def similar(a: str, b: str, threshold: float = 0.8) -> bool:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
 
 
+def correct_cin_digits(raw: str) -> str:
+    """
+    Corrige les confusions OCR fréquentes dans le numéro CIN
+    (ex: O→0, l→1, Z→2).
+    """
+    corrected = ""
+    for ch in raw:
+        corrected += CIN_DIGIT_CORRECTIONS.get(ch, ch)
+    # Garder seulement les chiffres
+    digits = re.sub(r'\D', '', corrected)
+    if re.match(r'^\d{7,8}$', digits):
+        return digits
+    return raw
+
+
 def correct_wilaya(place: str) -> str:
-    """Corrige le lieu de naissance en utilisant la similarité."""
+    """
+    Corrige le lieu de naissance en utilisant la similarité.
+    Retourne le gouvernorat arabe canonique si trouvé, sinon le lieu original.
+    """
     if not place:
         return place
 
-    normalized = normalize_arabic(place)
+    normalized = normalize_arabic(place.strip())
 
-    if normalized in WILAYAS_ARABIC:
+    # 1. Vérification directe
+    if normalized in {normalize_arabic(w) for w in WILAYAS_ARABIC}:
         return place
 
-    corrections = {
-        "براجة": "باجة", "باجة": "باجة", "بجاة": "باجة", "باجي": "باجة",
-        "براسق": "باجة", "تبرسق": "باجة",
-        "بابلية": "باجة", "بابلية": "باجة",
-    }
-
-    if normalized in corrections:
-        return corrections[normalized]
-
+    # 2. Correspondance par similarité (seuil 0.7)
     for eng, arabic in WILAYAS_NORMALIZE.items():
-        if similar(normalized, eng, 0.7) or similar(normalized, arabic, 0.7):
-            return arabic
-        if eng.lower() in normalized.lower() or normalized.lower() in eng.lower():
+        if (similar(normalized, eng, 0.7)
+                or similar(normalized, normalize_arabic(arabic), 0.7)
+                or eng.lower() in normalized.lower()
+                or normalized.lower() in eng.lower()):
             return arabic
 
-    for wilaya in WILAYAS_ARABIC:
-        if similar(normalized, normalize_arabic(wilaya), 0.75):
-            return wilaya
+    # 3. Correspondance partielle pour les lieux composés
+    for arabic in WILAYAS_ARABIC:
+        if normalize_arabic(arabic) in normalized:
+            return arabic
 
     return place
 
 
-def correct_common_ocr_errors(text: str) -> str:
-    """Corrige les erreurs OCR courantes."""
-    corrections = {
-        "باجة": "باجة", "بجوة": "باجة", "بجاة": "باجة", "بابلية": "باجة",
-        "أمورة": "أميمة", "أميم": "أميمة", "أمي": "أميمة",
-        "أحمد": "أحمد", "أحميدة": "أحمد",
-        "كريم": "كرم", "كر": "كرم", "كرم": "كرم",
-    }
-
-    normalized = normalize_arabic(text)
-    for wrong, correct in corrections.items():
-        if similar(normalized, normalize_arabic(wrong), 0.85):
-            return correct
-
-    return text
-
-
-def correct_name_pair(last_name: str, first_name: str) -> tuple:
-    """Corrige les paires de noms problématiques."""
-    corrections = {
-        ("بن كريم", "أحمد"): ("بن كرم", "أميمة"),
-        ("بن كريم", "ahmed"): ("بن كرم", "أميمة"),
-    }
-
-    key = (last_name, first_name)
-    if key in corrections:
-        return corrections[key]
-
-    if "بن" in last_name and first_name == "أحمد":
-        return (last_name.replace("كريم", "كرم"), "أميمة")
-
-    return (last_name, first_name)
-
-
-def extract_first_number(text: str) -> str:
-    """Extrait le premier nombre de 7-8 chiffres."""
-    match = re.search(r'\b(\d{7,8})\b', text.replace(" ", ""))
-    if match:
-        return match.group(1)
-    return ""
+def correct_arabic_name(text: str) -> str:
+    """
+    Nettoie un nom arabe des artefacts OCR courants :
+    - supprime les chiffres isolés
+    - supprime la ponctuation parasite
+    - normalise les espaces
+    """
+    if not text:
+        return text
+    # Supprimer les chiffres qui ne devraient pas être dans un nom
+    cleaned = re.sub(r'\d+', '', text)
+    # Supprimer la ponctuation sauf le tiret (noms composés)
+    cleaned = re.sub(r'[^\u0600-\u06FF\s\-]', '', cleaned)
+    # Normaliser les espaces
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
 
 
 def post_process_ocr_result(raw_data: dict) -> dict:
-    """Applique des corrections post-OCR."""
-    result = raw_data.copy()
-    extracted = result.get("extracted_data", {}).copy()
+    """
+    Applique les corrections post-OCR sur les données extraites.
+    - Corrige le numéro CIN (confusions chiffres/lettres)
+    - Corrige et normalise le lieu de naissance vers le gouvernorat
+    - Nettoie les noms arabes
+    """
+    if "extracted_data" not in raw_data:
+        return raw_data
 
-    if extracted.get("id_number"):
-        extracted["id_number"] = extract_first_number(extracted["id_number"])
+    data = raw_data["extracted_data"]
 
-    if extracted.get("place_of_birth"):
-        corrected_place = correct_wilaya(extracted["place_of_birth"])
-        if corrected_place != extracted["place_of_birth"]:
-            extracted["place_of_birth"] = corrected_place
+    # Correction CIN
+    if data.get("id_number"):
+        data["id_number"] = correct_cin_digits(data["id_number"])
 
-    if extracted.get("first_name"):
-        extracted["first_name"] = correct_common_ocr_errors(extracted["first_name"])
+    # Correction lieu de naissance
+    if data.get("place_of_birth"):
+        data["place_of_birth"] = correct_wilaya(data["place_of_birth"])
 
-    if extracted.get("last_name") and extracted.get("first_name"):
-        corrected_last, corrected_first = correct_name_pair(
-            extracted["last_name"], extracted["first_name"]
-        )
-        extracted["last_name"] = corrected_last
-        extracted["first_name"] = corrected_first
+    # Nettoyage noms arabes
+    if data.get("last_name"):
+        data["last_name"] = correct_arabic_name(data["last_name"])
+    if data.get("first_name"):
+        data["first_name"] = correct_arabic_name(data["first_name"])
 
-    result["extracted_data"] = extracted
-
-    if result.get("structured_data"):
-        result["structured_data"]["place_of_birth"] = extracted["place_of_birth"]
-        result["structured_data"]["last_name"] = extracted["last_name"]
-        result["structured_data"]["first_name"] = extracted["first_name"]
-
-    return result
+    raw_data["extracted_data"] = data
+    return raw_data
 
 
-IMPROVED_PROMPT = """Tu es un système OCR spécialisé dans les cartes d'identité nationales tunisiennes (CIN).
+# ── Prompt OCR amélioré ────────────────────────────────────────────────────
+# Ce prompt impose un format strict 5-lignes et liste les gouvernorats valides,
+# ce qui contraint le modèle et simplifie le parsing.
+IMPROVED_PROMPT = """
+Tu es un système OCR spécialisé pour la Carte d'Identité Nationale tunisienne (CIN).
 
-INSTRUCTIONS STRICTES:
-1. Lis UNIQUEMENT les informations sur la carte
-2. Ne RIEN inventer ou ajouter
-3. Le lieu de naissance DOIT être un gouvernorat tunisien
+⚠️ IMPORTANT :
+- Répond UNIQUEMENT en JSON valide
+- PAS de texte, PAS de markdown, PAS de ```json
+- PAS d'explication
+- PAS de phrases
+- PAS de liste hors JSON
 
-Gouvernorats tunisiens (24):
-- Tunis, Ariana, Ben Arous, Manouba, Nabeul, Zaghouan, Bizerte
-- Beja, Jendouba, Le Kef, Siliana, Kairouan, Kasserine
-- Sidi Bouzid, Sousse, Monastir, Mahdia, Sfax
-- Gafsa, Tozeur, Kebili, Gabes, Medenine, Tataouine
+📌 FORMAT OBLIGATOIRE :
 
-Réponds EXACTEMENT avec ce format (5 lignes):
-[numéro CIN - 7 ou 8 chiffres]
-[nom de famille en arabe]
-[prénom en arabe]
-[jour mois français année]
-[lieu de naissance - gouvernorat en arabe]
+{
+  "cin": "",
+  "last_name": "",
+  "first_name": "",
+  "date_of_birth": "",
+  "place_of_birth": ""
+}
 
-Exemple correct:
-12345678
-بن يحيى
-محمد
-15 mars 1990
-باجة
+📌 RÈGLES :
+- CIN = 7 ou 8 chiffres uniquement
+- Nom = اللقب (ou dernier nom arabe)
+- Prénom = الاسم
+- Date = format libre (sera normalisé après)
+- Lieu = gouvernorat tunisien si possible
+- Si une info manque → ""
 
-NE PAS inclure de label comme "CIN:" ou "Nom:"."""
+⚠️ NE JAMAIS AJOUTER AUTRE CHOSE QUE LE JSON
+"""
 
 
 if __name__ == "__main__":
-    test_data = {
-        "extracted_data": {
-            "id_number": "02225745",
-            "last_name": "بن كرم",
-            "first_name": "عبد الرؤوف",
-            "date_of_birth": "24 octobre 1957",
-            "place_of_birth": "تبرسق بجدة"
-        }
-    }
+    test_cases = [
+        {
+            "extracted_data": {
+                "id_number": "O2225745",
+                "last_name": "بن كرم3",
+                "first_name": "عبد الرؤوف",
+                "date_of_birth": "24 octobre 1957",
+                "place_of_birth": "تبرسق بجدة"
+            }
+        },
+        {
+            "extracted_data": {
+                "id_number": "12345678",
+                "last_name": "الزواوي",
+                "first_name": "محمد",
+                "date_of_birth": "01 janvier 1985",
+                "place_of_birth": "sfax"
+            }
+        },
+    ]
 
-    print("=== Test post-processing ===")
-    print(f"Avant: {test_data['extracted_data']['place_of_birth']}")
-
-    corrected = post_process_ocr_result(test_data)
-    print(f"Après: {corrected['extracted_data']['place_of_birth']}")
+    print("=== Test post-processing ===\n")
+    for i, test in enumerate(test_cases, 1):
+        print(f"--- Cas {i} ---")
+        print(f"Avant : {test['extracted_data']}")
+        corrected = post_process_ocr_result(test)
+        print(f"Après : {corrected['extracted_data']}\n")
