@@ -1,74 +1,53 @@
-# Qari OCR Test
+# Backend Python — API KYC
 
-This is a separate test project for:
+Pipeline eKYC complet : OCR (EasyOCR) + Extraction visage (MediaPipe) + Comparaison faciale (InsightFace).
 
-- base model: `Qwen/Qwen2-VL-2B-Instruct`
-- OCR adapter: `NAMAA-Space/Qari-OCR-0.1-VL-2B-Instruct`
+## Fichiers
 
-It is independent from the Tesseract project.
+- `api_server.py` — Serveur FastAPI (port 8000)
+- `easyocr_processor.py` — OCR CIN tunisienne (EasyOCR GPU)
+- `photo_extractor.py` — Extraction visage depuis la CIN (MediaPipe/OpenCV)
+- `face_comparison.py` — Qualité selfie + comparaison InsightFace
+- `static/faces/` — Visages extraits (servis statiquement)
+- `temp_docs/` — Documents uploadés (temporaires)
 
-## What this script does
-
-- loads one image
-- prepares a smaller copy for faster inference
-- loads the base model and the Qari adapter
-- runs one strict OCR-style prompt
-- saves the result to a JSON file
-
-## Files
-
-- `main.py`: main script
-- `requirements.txt`: dependencies
-- `prepared_image.jpg`: prepared image used for inference
-- `result.json`: saved result
-
-## Install
-
-Use a Python environment, then run:
+## Installation
 
 ```powershell
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-If you want GPU acceleration, make sure PyTorch is installed with CUDA support.
-
-## Usage
-
-Default image and default output:
+## Lancement
 
 ```powershell
-python main.py
+.venv\Scripts\python.exe api_server.py
 ```
 
-Specific image:
+## Endpoints
 
-```powershell
-python main.py ..\cin2.jpg
-```
+### KYC Session
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| POST | `/kyc/sessions` | Créer une session |
+| GET | `/kyc/sessions/{id}` | Récupérer une session |
+| POST | `/kyc/sessions/{id}/document` | Uploader un document |
+| POST | `/kyc/sessions/{id}/document/{docId}/extract-face` | Extraire le visage |
+| POST | `/kyc/sessions/{id}/selfie` | Uploader un selfie |
+| POST | `/kyc/sessions/{id}/compare-faces` | Comparer selfie vs document |
 
-Specific image and output:
+### Tests
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| POST | `/ocr/cin` | OCR direct |
+| POST | `/extract-face` | Extraction visage directe |
+| POST | `/check-selfie-quality` | Vérifier qualité selfie |
+| POST | `/compare-faces` | Comparaison directe (2 fichiers) |
 
-```powershell
-python main.py ..\cin2.jpg my_result.json
-```
+## Tech
 
-Specific image, output, image size, and max tokens:
-
-```powershell
-python main.py ..\cin2.jpg my_result.json 768 48
-```
-
-## Command line arguments
-
-The script accepts up to 4 arguments:
-
-1. image path
-2. output JSON path
-3. max image size
-4. max new tokens
-
-## Notes
-
-- GPU is much faster than CPU for this model.
-- Tesseract is still much faster overall.
-- This model can produce better Arabic OCR on some images, but it can also hallucinate.
+- **EasyOCR** — OCR arabe+anglais (GPU NVIDIA)
+- **MediaPipe** — Détection visage CIN
+- **InsightFace buffalo_l** — Embedding + comparaison faciale (ONNX GPU)
+- **FastAPI** — Serveur HTTP asynchrone
